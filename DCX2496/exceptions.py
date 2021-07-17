@@ -1,0 +1,2 @@
+class DCXSerialException(Exception):
+    pass
