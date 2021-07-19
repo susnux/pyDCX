@@ -1,3 +1,6 @@
+from DCX2496 import Channel
+
+
 def _is_bit(byte, bit):
     return bool(byte & (1 << bit))
 
@@ -23,14 +26,16 @@ class SearchResponse(Response):
 
 
 class PingResponse(Response):
+    class _PingData:
+        def __init__(self, data):
+            self.limited = _is_bit(data, 5)
+            self.level = _clear_bit(data, 5)
+
+    channels: dict[Channel, _PingData] = {}
+
     def __init__(self, data):
         assert len(data) == 25
         super().__init__(data)
-        index = 8
-        for channel in ["a", "b", "c", "1", "2", "3", "4", "5", "6"]:
-            setattr(
-                self,
-                "channel_" + channel,
-                {"level": _clear_bit(self.data[index], 5), "limited": _is_bit(self.data[index], 5)},
-            )
-            index += 1
+        start = 8
+        for channel in range(Channel.INPUT_A, Channel.OUTPUT_6 + 1):
+            self.channels[Channel(channel)] = self._PingData(self.data[start + channel])
