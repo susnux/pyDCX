@@ -36,6 +36,8 @@ class InputChannel:
     def __init__(self, channel: Channel, device):
         self.channel = channel
         self._device = device
+        self.gain: float = None
+        self.muted: bool = None
         self.level: float = None
         self.limited: bool = None
 
@@ -44,6 +46,7 @@ class InputChannel:
         Set gain of channel
         :param value: gain in dB from -15 up to 15, 0.1 step
         """
+        self.gain = value
         return self._invoke(0x02, _15db_range(value))
 
     def mute(self, value=True):
@@ -51,6 +54,7 @@ class InputChannel:
         Mute or unmute a channel
         :param value: True if channel should be muted, False otherwise
         """
+        self.muted = value
         return self._invoke(0x03, int(value))
 
     def delay(self, value=True):
