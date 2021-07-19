@@ -1,7 +1,6 @@
 from typing import Union, Optional
 from logging import getLogger
 from enum import IntEnum
-import re
 
 from .channel import Channel, InputChannel, OutputChannel, _15db_range
 from .connector import SerialConnector, DaemonConnector
@@ -36,10 +35,10 @@ class OutputConfiguration(IntEnum):
 class Device:
     DCX_HEADER = b"\xF0\x00\x20\x32"  # Identification header for serial com
 
-    def __init__(self, connection, batch_mode=False, device_id=0):
+    def __init__(self, connection: str, batch_mode=True, device_id=0):
         """
         Create the DCX class for communication
-        :param device_id: Set the DCX device ID (default is 0, valid 0 - 15)
+        :param device_id: Set the DCX device ID (valid 0 - 15, displayed as +1)
         :param connection: Serial port or network address
         """
         assert 0 <= device_id < 16
@@ -56,7 +55,7 @@ class Device:
             },
         }
         self._remote_mode = TransmitMode.REMOTE_RECEIVE
-        if re.match(r"(COM\d+|/dev/tty.+)", connection, re.IGNORECASE):
+        if connection.startswith(("com", "COM", "/")):
             self._connector = SerialConnector(connection)
         else:
             self._connector = DaemonConnector(connection)
@@ -66,7 +65,7 @@ class Device:
     def search_device(self):
         """
         Search serial connection for DCX device
-        :return: None or PING response if async is set to False
+        :return: SearchResponse
         """
         backup_id = self.device_id
         self.device_id = 0x20
@@ -94,7 +93,11 @@ class Device:
         Get status of current DCX device
         :return: PingResponse
         """
-        return self.__do_call(0x44, b"\x00\x00")
+        response = self.__do_call(0x44, b"\x00\x00")
+        for channel in self.channels.keys():
+            self.channels[channel].level = response.channels[channel].level
+            self.channels[channel].limited = response.channels[channel].limited
+        return response
 
     def dump(self, part=0):
         """
@@ -136,7 +139,7 @@ class Device:
         Mute all outputs
         :param mute: True to mute, False to unmute
         """
-        self._invoke(0x15, Channel.SETUP, int(mute))
+        return self._invoke(0x15, Channel.SETUP, int(mute))
 
     def set_sum_input_gain(self, input_channel: Channel, gain: float):
         """

@@ -36,6 +36,8 @@ class InputChannel:
     def __init__(self, channel: Channel, device):
         self.channel = channel
         self._device = device
+        self.level: float = None
+        self.limited: bool = None
 
     def set_gain(self, value: float):
         """
@@ -75,8 +77,8 @@ class InputChannel:
         return self
 
     def _invoke(self, parameter, value):
-        print(f"Channel OBJ: {parameter} - {value}")
         self._device._invoke(parameter, self.channel, value)
+        return self
 
 
 class OutputChannel(InputChannel):

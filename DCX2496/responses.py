@@ -1,4 +1,5 @@
-from DCX2496 import Channel
+from __future__ import annotations
+from .channel import Channel
 
 
 def _is_bit(byte, bit):
@@ -22,7 +23,21 @@ class DumpResponse(Response):
 
 
 class SearchResponse(Response):
-    ...
+    device_id: int = None
+    """Device ID, do not mix up with the shown one on the device screen"""
+
+    def __init__(self, data):
+        assert len(data) == 26
+        super().__init__(data)
+        self.device_id = data[4]
+
+    @property
+    def shown_id(self):
+        """
+        Returns the displayed device ID (screen of the DCX device)
+        :return: Displayed device ID
+        """
+        return self.device_id + 1
 
 
 class PingResponse(Response):
