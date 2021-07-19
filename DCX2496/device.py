@@ -3,7 +3,7 @@ from logging import getLogger
 from enum import IntEnum
 import re
 
-from .channel import Channel, InputChannel, OutputChannel
+from .channel import Channel, InputChannel, OutputChannel, _15db_range
 from .connector import SerialConnector, DaemonConnector
 
 
@@ -15,6 +15,22 @@ class TransmitMode(IntEnum):
     REMOTE_RECEIVE = 0x04
     REMOTE_TRANSMIT = 0x08
     REMOTE_TRANSCEIVE = REMOTE_RECEIVE | REMOTE_TRANSMIT
+
+
+class OutputConfiguration(IntEnum):
+    """Output configuration, see section 4.2.1 and Fig. 4.2 of manual"""
+
+    MONO = 0
+    """In MONO mode input A is the preset signal source for all outputs"""
+
+    LMHLMH = 1
+    """Input A routed to outputs 1, 2 and 3, and input B routed to outputs 4, 5 and 6"""
+
+    LLMMHH = 2
+    """Input A to outputs 1, 3 and 5, and input B to outputs 2, 4 and 6"""
+
+    LHLHLH = 3
+    """Input A can be routed to outputs 1 and 2, B to outputs 3 and 4, and C to outputs 5 and 6"""
 
 
 class Device:
@@ -40,7 +56,7 @@ class Device:
             },
         }
         self._remote_mode = TransmitMode.REMOTE_RECEIVE
-        if re.match(r'(COM\d+|/dev/tty.+)', connection, re.IGNORECASE):
+        if re.match(r"(COM\d+|/dev/tty.+)", connection, re.IGNORECASE):
             self._connector = SerialConnector(connection)
         else:
             self._connector = DaemonConnector(connection)
@@ -89,6 +105,47 @@ class Device:
         data = bytearray(b"\x01\x00")
         data.append(part)
         return self.__do_call(0x50, data)
+
+    def set_out_configuration(self, configuration: OutputConfiguration):
+        """
+        OUT CONFIGURATION selects the general operating mode, see section 4.2.1 of the manual
+        :param configuration: OutputConfiguration
+        """
+        return self._invoke(0x05, Channel.SETUP, configuration.value)
+
+    def enable_stereo_link(self, enable=True):
+        """
+        Determine whether processing with EQs, limiter, etc. is effective on the linked outputs,
+         or whether the settings for each output can be made independently.
+         See section 4.2.1 on page 8 of manual.
+        :param enable: True to enable, False to disable
+        """
+        return self._invoke(0x06, Channel.SETUP, int(enable))
+
+    def set_input_stereo_link(self, configuration: int):
+        """
+        Set input link, if enabled settings for Input A are copied to selected channel.
+        See section 4.2.1, page 9 of manual.
+        :param configuration: 0 (disable), 1 (A+B), 2 (A+B+C), 3 (A+B+C+SUM)
+        """
+        assert 0 <= configuration <= 3
+        return self._invoke(0x07, Channel.SETUP, configuration)
+
+    def mute_outputs(self, mute: bool = True):
+        """
+        Mute all outputs
+        :param mute: True to mute, False to unmute
+        """
+        self._invoke(0x15, Channel.SETUP, int(mute))
+
+    def set_sum_input_gain(self, input_channel: Channel, gain: float):
+        """
+        Set input gain for channel into the SUM channel
+        :param input_channel: A ... C
+        :param gain: -15.0 .. 15.0 dB
+        """
+        assert Channel.INPUT_A <= input_channel <= Channel.INPUT_C
+        return self._invoke(0x16 + input_channel - Channel.INPUT_A, Channel.SETUP, _15db_range(gain))
 
     def send(self):
         """
