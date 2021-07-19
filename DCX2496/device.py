@@ -1,11 +1,14 @@
 from typing import Union, Optional
-
-import serial
+from logging import getLogger
+from enum import IntEnum
+import re
 
 from .channel import Channel, InputChannel, OutputChannel
-from .exceptions import DCXSerialException
-from .responses import *
-from enum import IntEnum
+from .connector import SerialConnector, DaemonConnector
+
+
+logger = getLogger("pyDCX")
+logger.setLevel("DEBUG")
 
 
 class TransmitMode(IntEnum):
@@ -17,11 +20,11 @@ class TransmitMode(IntEnum):
 class Device:
     DCX_HEADER = b"\xF0\x00\x20\x32"  # Identification header for serial com
 
-    def __init__(self, serial_port, batch_mode=False, device_id=0, handler=lambda response: print(response.__repr__())):
+    def __init__(self, connection, batch_mode=False, device_id=0):
         """
         Create the DCX class for communication
         :param device_id: Set the DCX device ID (default is 0, valid 0 - 15)
-        :param handler: Set a response handler
+        :param connection: Serial port or network address
         """
         assert 0 <= device_id < 16
         self.batch_mode = batch_mode
@@ -37,8 +40,10 @@ class Device:
             },
         }
         self._remote_mode = TransmitMode.REMOTE_RECEIVE
-        self._handler = handler
-        self._communicator = _DCXCommunicator(serial_port)
+        if re.match(r'(COM\d+|/dev/tty.+)', connection, re.IGNORECASE):
+            self._connector = SerialConnector(connection)
+        else:
+            self._connector = DaemonConnector(connection)
         # For batch mode
         self.__commands = []
 
@@ -88,7 +93,7 @@ class Device:
     def send(self):
         """
         When in batch mode, this will send the previous commands
-        :return:
+        :return: self
         """
         if len(self.__commands) > 0:
             data = bytearray([len(self.__commands)])
@@ -96,8 +101,11 @@ class Device:
                 data.extend(command)
             self.__do_call(0x20, data)
             self.__commands.clear()
+        return self
 
     def _invoke(self, parameter, channel, value):
+        logger.debug(f"Invoke command {value} on channel {channel} with parameter {parameter}")
+        print(f"Invoke command with parameter {parameter} on channel {channel} with data {value}")
         data = self.__command(channel, parameter, value)
         self.__commands.append(data)
         if self.batch_mode:
@@ -108,7 +116,7 @@ class Device:
     def __command(self, channel, parameter, value):
         value = int(value)
         value_low = value & 0x7F
-        value_high = value >> 7
+        value_high = (value >> 7) & 0xFF
         b = bytearray(bytearray(bytes([channel])))
         b.append(parameter)
         b.append(value_high)
@@ -123,47 +131,4 @@ class Device:
         if data is not None:
             call.extend(data)
         call.append(0xF7)
-        return self._communicator.handle_command(call)
-
-
-class _DCXCommunicator:
-    """
-    Helper for serial data communication
-    """
-
-    # SEARCH PING DUMP
-    HAVE_RESPONSE = [0x40, 0x44, 0x50]
-
-    def __init__(self, serial_port="/dev/ttyUSB0"):
-        self.serial = serial.Serial(serial_port, baudrate=38400)
-
-    def handle_command(self, command):
-        """
-        Handle sending commands to DCX and receiving responses
-        :param command: DCX command bytes
-        :return: Response|None - Response if available else None
-        """
-        COMMAND_BYTE = 6
-        written = self.serial.write(command)
-        if written != len(command):
-            raise DCXSerialException()
-        return self._get_response() if command[COMMAND_BYTE] in self.HAVE_RESPONSE else None
-
-    def get_response(self):
-        data = self._read_response()
-        command_byte = 6
-        response_type = {0x00: SearchResponse, 0x04: PingResponse, 0x10: DumpResponse}
-        return response_type.get(data[command_byte], Response)(data)
-
-    def _read_response(self):
-        EOL = b"\xF7"
-        data = bytearray()
-        while True:
-            c = self.serial.read(1)
-            if c:
-                data += c
-                if data[-1:] == EOL:
-                    break
-            else:
-                break
-        return data
+        return self._connector.handle_command(call)
