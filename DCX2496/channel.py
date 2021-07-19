@@ -12,6 +12,9 @@ def _15db_range(value):
 
 
 class Channel(IntEnum):
+    SETUP = 0x00
+    """Setup channel is used for internal purpose"""
+
     INPUT_A = 0x01
     INPUT_B = 0x02
     INPUT_C = 0x03
@@ -77,10 +80,32 @@ class InputChannel:
 
 
 class OutputChannel(InputChannel):
+    def set_source(self, channel: Channel):
+        """
+        Set source of the output channel
+        :param channel: Channel A ... SUM
+        """
+        assert Channel.INPUT_A <= channel <= Channel.INPUT_SUM
+        self._invoke(0x41, int(channel - Channel.INPUT_A))  # 0 ... 3 = A ... SUM
+
+    def set_polarity(self, inverse=False):
+        """
+        Inverse polarity
+        :param inverse: True if polarity should be inverted
+        """
+        self._invoke(0x49, int(inverse))
+
+    def set_phase(self, phase):
+        """
+        Set phase of output in degree, input values are rounded
+        :param phase: phase in deg 0 ... 180 (step 5 deg)
+        :return:
+        """
+        self._invoke(0x4A, _map_numbers(0, 180, 0, 36))  # 0 ... 36
+
     def set_short_delay(self, value=True):
         """
         Set the short delay of an output channel.
         :param value: delay in millimeters [0, 4000], step: 2mm
-        :return:
         """
         self._invoke(0x4B, _map_numbers(0.0, 4000.0, 0.0, 2000.0))
