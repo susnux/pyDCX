@@ -63,6 +63,14 @@ class InputChannel:
         # 0 ... 200m -> values 0 ... 4000 (= step of 5cm)
         self._invoke(0x05, _map_numbers(0.0, 200.0, 0.0, 4000.0))
 
+    def send(self):
+        """
+        When in batch mode, this will send the previous commands
+        :return: self
+        """
+        self._device.send()
+        return self
+
     def _invoke(self, parameter, value):
         print(f"Channel OBJ: {parameter} - {value}")
         self._device._invoke(parameter, self.channel, value)
