@@ -31,6 +31,8 @@ class Connector:
 
     def get_response(self):
         data = self.read_response()
+        if len(data) < FUNCTION_BYTE + 1:
+            raise DCXConnectorException("Invalid response (too short) read")
         response_type = {0x00: SearchResponse, 0x04: PingResponse, 0x10: DumpResponse}
         return response_type.get(data[FUNCTION_BYTE], Response)(data)
 
