@@ -1,5 +1,6 @@
 from __future__ import annotations
 from .channel import Channel
+from .constants import DCX_HEADER, TERMINATOR_BYTE
 
 
 def _is_bit(byte, bit):
@@ -11,15 +12,44 @@ def _clear_bit(byte, bit):
 
 
 class Response:
-    def __init__(self, data):
+    def __init__(self, data: bytearray):
+        assert data.startswith(DCX_HEADER) and len(data) > 8 and data[-1] == TERMINATOR_BYTE
         self.data = data
 
     def __str__(self):
         return str(self.data)
 
+    @property
+    def payload(self):
+        """
+        Return the payload of the response, meaning the data without header and terminator
+        :return: bytearray
+        """
+        return self.data[6:-1]
+
 
 class DumpResponse(Response):
-    ...
+    LENGTH_PART0 = 1015
+    LENGTH_PART1 = 911
+
+    @property
+    def payload(self):
+        return self.part_0 + self.part_1
+
+    @property
+    def part_0(self):
+        return self.data[6 : self.LENGTH_PART0 - 1] if len(self.data) >= self.LENGTH_PART0 else bytearray()
+
+    @property
+    def part_1(self):
+        if len(self.data) > self.LENGTH_PART0:
+            # Both parts are set
+            return self.data[self.LENGTH_PART0 + 6 : -1]
+        elif len(self.data) == self.LENGTH_PART1:
+            # Only second part set
+            return super().payload
+        else:
+            return bytearray()
 
 
 class SearchResponse(Response):
