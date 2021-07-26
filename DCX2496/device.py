@@ -4,37 +4,15 @@ from enum import IntEnum
 
 from .channel import Channel, InputChannel, OutputChannel, _15db_range
 from .connector import SerialConnector, DaemonConnector
-
+from .constants import DCX_HEADER, FunctionBytes, OutputConfiguration, TransmitMode
+from .dump_lut import dump_lut
+from .responses import DumpResponse
 
 logger = getLogger("pyDCX")
 logger.setLevel("DEBUG")
 
 
-class TransmitMode(IntEnum):
-    REMOTE_RECEIVE = 0x04
-    REMOTE_TRANSMIT = 0x08
-    REMOTE_TRANSCEIVE = REMOTE_RECEIVE | REMOTE_TRANSMIT
-
-
-class OutputConfiguration(IntEnum):
-    """Output configuration, see section 4.2.1 and Fig. 4.2 of manual"""
-
-    MONO = 0
-    """In MONO mode input A is the preset signal source for all outputs"""
-
-    LMHLMH = 1
-    """Input A routed to outputs 1, 2 and 3, and input B routed to outputs 4, 5 and 6"""
-
-    LLMMHH = 2
-    """Input A to outputs 1, 3 and 5, and input B to outputs 2, 4 and 6"""
-
-    LHLHLH = 3
-    """Input A can be routed to outputs 1 and 2, B to outputs 3 and 4, and C to outputs 5 and 6"""
-
-
 class Device:
-    DCX_HEADER = b"\xF0\x00\x20\x32"  # Identification header for serial com
-
     def __init__(self, connection: str, batch_mode=True, device_id=0):
         """
         Create the DCX class for communication
@@ -54,7 +32,7 @@ class Device:
                 for idx in range(Channel.OUTPUT_1, Channel.OUTPUT_6 + 1)
             },
         }
-        self._remote_mode = TransmitMode.REMOTE_RECEIVE
+        self._remote_mode = TransmitMode.RECEIVE
         if connection.startswith(("com", "COM", "/")):
             self._connector = SerialConnector(connection)
         else:
@@ -70,7 +48,7 @@ class Device:
         backup_id = self.device_id
         self.device_id = 0x20
         try:
-            return self.__do_call(0x40)
+            return self.__do_call(FunctionBytes.SEARCH)
         finally:
             self.device_id = backup_id
 
@@ -86,28 +64,35 @@ class Device:
             self._remote_mode = mode
             data = bytearray(bytes([mode]))
             data.append(0x00)
-            return self.__do_call(0x3F, data)
+            return self.__do_call(FunctionBytes.TRANSMIT, data)
 
     def ping(self):
         """
         Get status of current DCX device
         :return: PingResponse
         """
-        response = self.__do_call(0x44, b"\x00\x00")
+        response = self.__do_call(FunctionBytes.PING, b"\x00\x00")
         for channel in self.channels.keys():
             self.channels[channel].level = response.channels[channel].level
             self.channels[channel].limited = response.channels[channel].limited
         return response
 
-    def dump(self, part=0):
+    def dump(self, part=None):
         """
         Dump all settings of current DCX device
-        :param part: Data part 0 or 1
+        Call to refresh internal storage of settings (no parameter needed)
+        :param part: Data part 0 or 1, None means both
         :return: DumpResponse
         """
-        data = bytearray(b"\x01\x00")
-        data.append(part)
-        return self.__do_call(0x50, data)
+        if part is None:
+            dr = DumpResponse(self.dump(0).data + self.dump(1).data)
+            self._parse_dump_with_lut(dr.payload)
+            return dr
+        else:
+            assert 0 <= part <= 1
+            data = bytearray(b"\x01\x00")
+            data.append(part)
+            return self.__do_call(FunctionBytes.DUMP, data)
 
     def set_out_configuration(self, configuration: OutputConfiguration):
         """
@@ -163,6 +148,22 @@ class Device:
             self.__commands.clear()
         return self
 
+    def _parse_dump_with_lut(self, dump):
+        for parameter in dump_lut.keys():
+            for channel in Channel:
+                if dump_lut[parameter][channel]:
+                    value = 0
+                    for idx, mapping in enumerate(dump_lut[parameter][channel]):
+                        shift = min(1, idx) * 7 + 1 * max(0, idx - 1)
+                        if isinstance(mapping, tuple):
+                            value += (dump[mapping[0]] & (1 << mapping[1])) << shift
+                        else:
+                            value += dump[mapping[0]] << shift
+                    if channel is not Channel.SETUP:
+                        self.channels[channel][parameter] = value
+                    else:
+                        self[parameter] = value
+
     def _invoke(self, parameter, channel, value):
         logger.debug(f"Invoke command {value} on channel {channel} with parameter {parameter}")
         print(f"Invoke command with parameter {parameter} on channel {channel} with data {value}")
@@ -184,7 +185,7 @@ class Device:
         return b
 
     def __do_call(self, function, data=None):
-        call = bytearray(self.DCX_HEADER)
+        call = bytearray(DCX_HEADER)
         call.append(self.device_id)
         call.append(0x0E)
         call.append(function)
