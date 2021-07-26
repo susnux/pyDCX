@@ -2,15 +2,14 @@ import socket
 import serial
 import re
 
+from .constants import FunctionBytes, FUNCTION_BYTE
 from .exceptions import DCXSerialException, DCXConnectorException
 from .logger import logger
 from .responses import SearchResponse, PingResponse, DumpResponse, Response
 
 
 class Connector:
-    # SEARCH PING DUMP
-    HAVE_RESPONSE = [0x40, 0x44, 0x50]
-    COMMAND_BYTE = 6
+    HAVE_RESPONSE = [FunctionBytes.SEARCH, FunctionBytes.PING, FunctionBytes.DUMP]
 
     def handle_command(self, command):
         """
@@ -19,7 +18,7 @@ class Connector:
         :return: Response|None - Response if available else None
         """
         self.write_command(command)
-        return self.get_response() if command[self.COMMAND_BYTE] in self.HAVE_RESPONSE else None
+        return self.get_response() if command[FUNCTION_BYTE] in self.HAVE_RESPONSE else None
 
     def write_command(self, command):
         pass
@@ -33,7 +32,7 @@ class Connector:
     def get_response(self):
         data = self.read_response()
         response_type = {0x00: SearchResponse, 0x04: PingResponse, 0x10: DumpResponse}
-        return response_type.get(data[self.COMMAND_BYTE], Response)(data)
+        return response_type.get(data[FUNCTION_BYTE], Response)(data)
 
 
 class DaemonConnector(Connector):
