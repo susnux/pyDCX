@@ -8,7 +8,7 @@ from os import path, remove
 from configparser import ConfigParser
 
 from DCX2496.connector import SerialConnector
-from DCX2496.constants import FUNCTION_BYTE, FunctionBytes, TERMINATOR
+from DCX2496.constants import FUNCTION_BYTE, FunctionBytes, TERMINATOR_BYTE
 
 
 class DCXDaemon:
@@ -53,7 +53,7 @@ class DCXDaemon:
             for sock in readable:
                 if sock is self.server:
                     conn, _ = sock.accept()
-                    self.connections[conn] = (bytearray(), bytearray())
+                    self.connections[conn] = [bytearray(), bytearray()]
                 else:
                     self.read_client(sock)
             for sock in writeable:
@@ -70,8 +70,8 @@ class DCXDaemon:
             sock.close()
         else:
             self.connections[sock][0].extend(data)
-            if len(self.connections[sock][0]) >= 8 and TERMINATOR in self.connections[sock][0]:
-                idx = self.connections[sock][0].find(TERMINATOR, 7)
+            if len(self.connections[sock][0]) >= 8 and TERMINATOR_BYTE in self.connections[sock][0]:
+                idx = self.connections[sock][0].find(TERMINATOR_BYTE, 7)
                 command = self.connections[sock][0][0 : idx + 1]
                 self.connections[sock][0] = self.connections[sock][0][idx:-1]
                 resp = self.handle_command(command)
